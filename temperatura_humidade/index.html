@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>DHT11 – Serial + Gráfico em Tempo Real</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+  body { font-family: Arial, sans-serif; padding: 20px; }
+  .valor { font-size: 24px; margin: 10px 0; }
+  button { padding: 10px 20px; font-size: 18px; }
+  #grafico { max-width: 900px; margin-top: 30px; }
+</style>
+</head>
+<body>
+
+<h1>DHT11 – Gráfico em Tempo Real</h1>
+<button id="conectar">Conectar Arduino</button>
+
+<div class="valor">Temperatura: <span id="temp">--</span> °C</div>
+<div class="valor">Umidade: <span id="umid">--</span> %</div>
+
+<canvas id="grafico"></canvas>
+
+<script>
+let porta;
+let reader;
+let buffer = "";
+
+// ------------------------------
+// CONFIGURAÇÃO DO GRÁFICO
+// ------------------------------
+const ctx = document.getElementById("grafico").getContext("2d");
+
+const grafico = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: [],  // timestamps
+        datasets: [
+            {
+                label: 'Temperatura (°C)',
+                data: [],
+                borderWidth: 2,
+                tension: 0.3
+            },
+            {
+                label: 'Umidade (%)',
+                data: [],
+                borderWidth: 2,
+                tension: 0.3
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        animation: false,
+        scales: {
+            x: {
+                title: { display: true, text: "Tempo" }
+            },
+            y: {
+                beginAtZero: false,
+                title: { display: true, text: "Valores" }
+            }
+        }
+    }
+});
+
+// Função para adicionar ponto ao gráfico
+function adicionaPonto(temperatura, umidade) {
+    const agora = new Date().toLocaleTimeString();
+
+    grafico.data.labels.push(agora);
+    grafico.data.datasets[0].data.push(temperatura);
+    grafico.data.datasets[1].data.push(umidade);
+
+    // Mantém o gráfico com no máximo 50 pontos
+    if (grafico.data.labels.length > 50) {
+        grafico.data.labels.shift();
+        grafico.data.datasets.forEach(ds => ds.data.shift());
+    }
+
+    grafico.update();
+}
+
+// ------------------------------
+// SERIAL
+// ------------------------------
+document.getElementById("conectar").onclick = async () => {
+    try {
+        porta = await navigator.serial.requestPort();
+        await porta.open({ baudRate: 9600 });
+
+        reader = porta.readable.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value);
+
+            let linhas = buffer.split("\n");
+            buffer = linhas.pop();
+
+            for (let linha of linhas) {
+                linha = linha.trim();
+                if (!linha) continue;
+
+                try {
+                    let obj = JSON.parse(linha);
+
+                    if (obj.temperatura !== undefined) {
+                        // Atualiza números
+                        document.getElementById("temp").innerText =
+                             obj.temperatura.toFixed(1);
+
+                        document.getElementById("umid").innerText =
+                             obj.umidade.toFixed(1);
+
+                        // Atualiza gráfico
+                        adicionaPonto(obj.temperatura, obj.umidade);
+                    }
+
+                } catch(e) {
+                    console.log("Fragmento ignorado:", linha);
+                }
+            }
+        }
+    } catch (erro) {
+        alert("Falha ao conectar: " + erro);
+    }
+};
+</script>
+
+</body>
+</html>
